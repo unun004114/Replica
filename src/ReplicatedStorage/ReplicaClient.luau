@@ -221,7 +221,7 @@ local function ReplicaNew(id: number, self_creation: {}) -- self_creation = {tok
 
 		write_lib = write_lib,
 		
-		set_listeners = {}, -- {[key]: Signal}
+		set_listener_tree = {}, -- path segment trie; leaf node stores "Signal"
 		write_listeners = {}, -- {[key]: Signal}
 		changed_listeners = Signal.New(),
 		
@@ -314,11 +314,19 @@ function Replica.Test()
 end
 
 function Replica:OnSet(path: {}, listener: () -> ()): Signal.Connection
-	local path_key = table.concat(path, ".")
-	local listeners = self.set_listeners[path_key]
+	local node = self.set_listener_tree
+	for _, segment in ipairs(path) do
+		local child = node[segment]
+		if child == nil then
+			child = {}
+			node[segment] = child
+		end
+		node = child
+	end
+	local listeners = node.Signal
 	if listeners == nil then
 		listeners = Signal.New()
-		self.set_listeners[path_key] = listeners
+		node.Signal = listeners
 	end
 	
 	return listeners:Connect(listener)
@@ -390,8 +398,15 @@ function Replica:Set(path: {string}, value: any)
 	
 	-- Firing signals:
 	
-	if next(self.set_listeners) ~= nil then
-		local listeners = self.set_listeners[table.concat(path, ".")]
+	local node = self.set_listener_tree
+	for _, segment in ipairs(path) do
+		node = node[segment]
+		if node == nil then
+			break
+		end
+	end
+	if node ~= nil then
+		local listeners = node.Signal
 		if listeners ~= nil then
 			listeners:Fire(value, old_value)
 		end
@@ -521,6 +536,15 @@ local function DestroyReplica(replica, is_depth_call)
 	-- Cleanup:
 	replica.Maid:Unlock(MAID_LOCK)
 	replica.Maid:Cleanup()
+	table.clear(replica.Children)
+	table.clear(replica.set_listener_tree)
+	table.clear(replica.write_listeners)
+	replica.changed_listeners = nil
+	replica.write_lib = nil
+	replica.Parent = nil
+	replica.self_creation = nil
+	replica.Data = {}
+	replica.Tags = {}
 	-- Bind cleanup:
 	replica.BoundInstance = nil
 end

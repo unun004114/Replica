@@ -872,6 +872,17 @@ local function DestroyReplica(replica)
 	if replica.creation ~= nil then
 		replica.creation[tostring(id)] = nil
 	end
+	-- Release heavy references for lower memory footprint when external references exist:
+	table.clear(replica.Children)
+	replica.Parent = nil
+	replica.Data = EMPTY_TABLE
+	replica.Tags = EMPTY_TABLE
+	replica.self_creation = nil
+	replica.creation = nil
+	replica.replication = nil
+	replica.write_lib = nil
+	replica.write_lib_module = nil
+	replica.OnServerEvent = nil
 	-- Swap metatables:
 	setmetatable(replica, LockedReplica)
 end
